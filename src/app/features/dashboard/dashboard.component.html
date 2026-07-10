@@ -38,6 +38,7 @@
                 <th class="p-3 sm:p-4 font-semibold text-left text-xs sm:text-sm tracking-wider uppercase">Longitud</th>
                 <th class="p-3 sm:p-4 font-semibold text-left text-xs sm:text-sm tracking-wider uppercase">Último Reporte</th>
                 <th class="p-3 sm:p-4 font-semibold text-center text-xs sm:text-sm tracking-wider uppercase">Estado</th>
+                <th class="p-3 sm:p-4 font-semibold text-center text-xs sm:text-sm tracking-wider uppercase">Acciones</th>
               </tr>
             </ng-template>
 
@@ -64,12 +65,43 @@
                     [severity]="getSeverity(vehicle.status)">
                   </p-tag>
                 </td>
+                <td class="p-3 sm:p-4 text-center whitespace-nowrap">
+                  @if (pendingDeleteVehicleId === vehicle.vehicleId) {
+                    <form
+                      class="flex flex-col items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-2 shadow-sm"
+                      (submit)="$event.preventDefault(); confirmDeleteVehicle(vehicle.vehicleId)">
+                      <span class="text-[11px] font-semibold text-rose-700">¿Desea eliminar {{ vehicle.vehicleId }}?</span>
+                      <div class="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          class="rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-rose-700">
+                          Sí
+                        </button>
+                        <button
+                          type="button"
+                          class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                          (click)="cancelDeleteVehicle()">
+                          Cancelar
+                        </button>
+                      </div>
+                    </form>
+                  } @else {
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                      (click)="beginDeleteVehicle(vehicle.vehicleId)"
+                      [attr.aria-label]="'Eliminar vehículo ' + vehicle.vehicleId">
+                      <i class="pi pi-trash"></i>
+                      Eliminar
+                    </button>
+                  }
+                </td>
               </tr>
             </ng-template>
 
             <ng-template pTemplate="emptymessage">
               <tr>
-                <td colspan="5" class="p-12 text-center text-slate-400">
+                <td colspan="6" class="p-12 text-center text-slate-400">
                   <div class="flex flex-col items-center justify-center gap-2">
                     <i class="pi pi-spin pi-spinner text-sky-500 text-3xl mb-1"></i>
                     <p class="font-medium text-slate-600 text-base">Esperando señal de telemetría...</p>

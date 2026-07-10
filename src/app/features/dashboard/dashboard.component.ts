@@ -43,6 +43,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   public vehicles: VehicleStatus[] = [];
   public loading = true;
+  public pendingDeleteVehicleId: string | null = null;
 
   ngOnInit(): void {
     if (!isPlatformBrowser(this.platformId)) {
@@ -53,17 +54,23 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.realtimeUpdatesSubscription = this.realtimeTelemetryService.vehicleUpdates$.subscribe((vehicle) => {
       console.info('[Dashboard] Evento en vivo recibido y aplicado al estado:', vehicle);
 
-      const existingIndex = this.vehicles.findIndex((item) => item.vehicleId === vehicle.vehicleId);
+      const isVehicleStatus = 'lastLat' in vehicle && 'lastLng' in vehicle;
 
-      if (existingIndex >= 0) {
-        this.vehicles[existingIndex] = vehicle;
+      if (isVehicleStatus) {
+        const existingIndex = this.vehicles.findIndex((item) => item.vehicleId === vehicle.vehicleId);
+
+        if (existingIndex >= 0) {
+          this.vehicles[existingIndex] = vehicle;
+        } else {
+          this.vehicles = [vehicle, ...this.vehicles];
+        }
       } else {
-        this.vehicles = [vehicle, ...this.vehicles];
+        this.vehicles = this.vehicles.filter((item) => item.vehicleId !== vehicle.vehicleId);
       }
 
       this.loading = false;
       this.updateMapMarkers(this.vehicles);
-      this.cdr.markForCheck();
+      this.cdr.detectChanges();
     });
 
     this.telemetrySubscription = interval(10000)
@@ -76,12 +83,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           this.vehicles = data;
           this.loading = false;
           this.updateMapMarkers(data);
-          this.cdr.markForCheck();
+          this.cdr.detectChanges();
         },
         error: (err) => {
           console.error('Error en el flujo de telemetría:', err);
           this.loading = false;
-          this.cdr.markForCheck();
+          this.cdr.detectChanges();
         }
       });
 
@@ -171,6 +178,31 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     } else {
       this.map.fitBounds(this.L!.latLngBounds(points), { padding: [40, 40], maxZoom: 12 });
     }
+  }
+
+  public beginDeleteVehicle(vehicleId: string): void {
+    this.pendingDeleteVehicleId = vehicleId;
+    this.cdr.detectChanges();
+  }
+
+  public cancelDeleteVehicle(): void {
+    this.pendingDeleteVehicleId = null;
+    this.cdr.detectChanges();
+  }
+
+  public confirmDeleteVehicle(vehicleId: string): void {
+    this.pendingDeleteVehicleId = null;
+    this.cdr.detectChanges();
+
+    this.telemetryService.deleteVehicle(vehicleId).subscribe((deleted) => {
+      if (!deleted) {
+        return;
+      }
+
+      this.vehicles = this.vehicles.filter((vehicle) => vehicle.vehicleId !== vehicleId);
+      this.updateMapMarkers(this.vehicles);
+      this.cdr.detectChanges();
+    });
   }
 
   public getSeverity(status: string): 'success' | 'secondary' | 'danger' | 'info' | undefined {

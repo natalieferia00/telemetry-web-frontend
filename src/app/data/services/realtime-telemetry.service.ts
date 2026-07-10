@@ -10,6 +10,12 @@ import {
 import { Subject } from 'rxjs';
 import { VehicleStatus } from '../../core/models/telemetry.model';
 
+interface VehicleDeletedPayload {
+  vehicleId: string;
+}
+
+type RealtimeVehiclePayload = VehicleStatus | VehicleDeletedPayload;
+
 interface SignalRActionResponse<TPayload = unknown> {
   type?: string;
   payload?: TPayload;
@@ -20,7 +26,7 @@ interface SignalRActionResponse<TPayload = unknown> {
 })
 export class RealtimeTelemetryService {
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly vehicleUpdatesSubject = new Subject<VehicleStatus>();
+  private readonly vehicleUpdatesSubject = new Subject<RealtimeVehiclePayload>();
 
   readonly vehicleUpdates$ = this.vehicleUpdatesSubject.asObservable();
   private hubConnection?: HubConnection;
@@ -52,16 +58,27 @@ export class RealtimeTelemetryService {
       .configureLogging(LogLevel.Information)
       .build();
 
-    this.hubConnection.on('ReceiveAction', (response: SignalRActionResponse<VehicleStatus>) => {
+    this.hubConnection.on('ReceiveAction', (response: SignalRActionResponse<RealtimeVehiclePayload>) => {
       console.info('[SignalR] Evento recibido:', response);
 
-      if (response.type !== 'GPS_INGESTED' || !response.payload) {
-        console.warn('[SignalR] Evento recibido pero no es GPS_INGESTED o no tiene payload:', response);
+      if (!response.type || !response.payload) {
+        console.warn('[SignalR] Evento recibido sin tipo o sin payload:', response);
         return;
       }
 
-      console.log('[SignalR] Actualizando vehículo en tiempo real:', response.payload);
-      this.vehicleUpdatesSubject.next(response.payload);
+      if (response.type === 'GPS_INGESTED') {
+        console.log('[SignalR] Actualizando vehículo en tiempo real:', response.payload);
+        this.vehicleUpdatesSubject.next(response.payload);
+        return;
+      }
+
+      if (response.type === 'VEHICLE_DELETED') {
+        console.log('[SignalR] Eliminando vehículo en tiempo real:', response.payload);
+        this.vehicleUpdatesSubject.next(response.payload);
+        return;
+      }
+
+      console.warn('[SignalR] Evento no manejado:', response.type);
     });
 
     this.hubConnection.onreconnecting((error) => {
