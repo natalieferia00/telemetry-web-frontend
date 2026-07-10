@@ -20,6 +20,15 @@ import { CardModule } from 'primeng/card';
 import { TagModule } from 'primeng/tag';
 import { RealtimeTelemetryService } from '../../data/services/realtime-telemetry.service';
 
+interface ActivityEvent {
+  id: number;
+  title: string;
+  detail: string;
+  timestamp: Date;
+}
+
+type DashboardStatusFilter = 'all' | 'active' | 'stopped' | 'maintenance';
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -37,19 +46,32 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private telemetrySubscription?: Subscription;
   private realtimeUpdatesSubscription?: Subscription;
+  private liveClockSubscription?: Subscription;
   private map?: import('leaflet').Map;
   private L?: typeof import('leaflet');
   private markers: import('leaflet').Marker[] = [];
+  private activitySequence = 0;
 
   public vehicles: VehicleStatus[] = [];
   public loading = true;
   public pendingDeleteVehicleId: string | null = null;
+  public isDarkMode = true;
+  public selectedVehicleId: string | null = null;
+  public statusFilter: DashboardStatusFilter = 'all';
+  public activityFeed: ActivityEvent[] = [];
+  public liveClock = new Date();
+  public lastSyncAt = new Date();
 
   ngOnInit(): void {
     if (!isPlatformBrowser(this.platformId)) {
       this.loading = false;
       return;
     }
+
+    this.liveClockSubscription = interval(1000).subscribe(() => {
+      this.liveClock = new Date();
+      this.cdr.detectChanges();
+    });
 
     this.realtimeUpdatesSubscription = this.realtimeTelemetryService.vehicleUpdates$.subscribe((vehicle) => {
       console.info('[Dashboard] Evento en vivo recibido y aplicado al estado:', vehicle);
@@ -64,11 +86,15 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         } else {
           this.vehicles = [vehicle, ...this.vehicles];
         }
+
+        this.addActivity('Vehículo actualizado', `${vehicle.vehicleId} envió una nueva posición.`);
       } else {
         this.vehicles = this.vehicles.filter((item) => item.vehicleId !== vehicle.vehicleId);
+        this.addActivity('Vehículo eliminado', `${vehicle.vehicleId} fue eliminado del sistema.`);
       }
 
       this.loading = false;
+      this.ensureSelection();
       this.updateMapMarkers(this.vehicles);
       this.cdr.detectChanges();
     });
@@ -80,10 +106,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       )
       .subscribe({
         next: (data) => {
-          this.vehicles = data;
-          this.loading = false;
-          this.updateMapMarkers(data);
-          this.cdr.detectChanges();
+          this.applyTelemetryState(data);
+          this.addActivity('Sincronización', 'Se recargó la telemetría desde el backend.');
         },
         error: (err) => {
           console.error('Error en el flujo de telemetría:', err);
@@ -180,6 +204,132 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  public get totalVehicles(): number {
+    return this.vehicles.length;
+  }
+
+  public get activeVehicles(): number {
+    return this.vehicles.filter((vehicle) => this.getStatusGroup(vehicle.status) === 'active').length;
+  }
+
+  public get stoppedVehicles(): number {
+    return this.vehicles.filter((vehicle) => this.getStatusGroup(vehicle.status) === 'stopped').length;
+  }
+
+  public get maintenanceVehicles(): number {
+    return this.vehicles.filter((vehicle) => this.getStatusGroup(vehicle.status) === 'maintenance').length;
+  }
+
+  public get validCoordinatesVehicles(): number {
+    return this.vehicles.filter((vehicle) => Number.isFinite(vehicle.lastLat) && Number.isFinite(vehicle.lastLng)).length;
+  }
+
+  public get locationCoveragePercentage(): number {
+    if (!this.totalVehicles) {
+      return 0;
+    }
+
+    return Math.round((this.validCoordinatesVehicles / this.totalVehicles) * 100);
+  }
+
+  public get statusBreakdown(): Array<{ label: string; value: number; percentage: number; color: string }> {
+    const total = this.totalVehicles || 1;
+
+    return [
+      {
+        label: 'Activos',
+        value: this.activeVehicles,
+        percentage: Math.round((this.activeVehicles / total) * 100),
+        color: '#22c55e',
+      },
+      {
+        label: 'Detenidos',
+        value: this.stoppedVehicles,
+        percentage: Math.round((this.stoppedVehicles / total) * 100),
+        color: '#38bdf8',
+      },
+      {
+        label: 'Mantenimiento',
+        value: this.maintenanceVehicles,
+        percentage: Math.round((this.maintenanceVehicles / total) * 100),
+        color: '#f97316',
+      },
+    ];
+  }
+
+  public get filteredVehicles(): VehicleStatus[] {
+    if (this.statusFilter === 'all') {
+      return this.vehicles;
+    }
+
+    return this.vehicles.filter((vehicle) => this.getStatusGroup(vehicle.status) === this.statusFilter);
+  }
+
+  public get alertsSummary(): Array<{ title: string; description: string; tone: 'neutral' | 'warning' | 'danger' }> {
+    const alerts: Array<{ title: string; description: string; tone: 'neutral' | 'warning' | 'danger' }> = [];
+
+    if (!this.vehicles.length) {
+      alerts.push({ title: 'Sin datos', description: 'No hay vehículos disponibles para monitorear.', tone: 'neutral' });
+    }
+
+    const invalidCoordinates = this.totalVehicles - this.validCoordinatesVehicles;
+    if (invalidCoordinates > 0) {
+      alerts.push({
+        title: 'Coordenadas incompletas',
+        description: `${invalidCoordinates} vehículo(s) no tienen ubicación válida.`,
+        tone: 'warning',
+      });
+    }
+
+    if (this.maintenanceVehicles > 0) {
+      alerts.push({
+        title: 'Mantenimiento activo',
+        description: `${this.maintenanceVehicles} vehículo(s) requieren atención.`,
+        tone: 'danger',
+      });
+    }
+
+    if (!alerts.length) {
+      alerts.push({ title: 'Todo estable', description: 'El sistema está corriendo con estado normal.', tone: 'neutral' });
+    }
+
+    return alerts;
+  }
+
+  public get selectedVehicle(): VehicleStatus | undefined {
+    return this.vehicles.find((vehicle) => vehicle.vehicleId === this.selectedVehicleId) ?? this.vehicles[0];
+  }
+
+  public toggleTheme(): void {
+    this.isDarkMode = !this.isDarkMode;
+    this.cdr.detectChanges();
+  }
+
+  public selectVehicle(vehicleId: string): void {
+    this.selectedVehicleId = vehicleId;
+    this.cdr.detectChanges();
+  }
+
+  public refreshTelemetry(): void {
+    this.loading = true;
+    this.telemetryService.getVehiclesStatus().subscribe({
+      next: (data) => {
+        this.applyTelemetryState(data);
+        this.addActivity('Refresco manual', 'Se ejecutó una actualización manual del dashboard.');
+      },
+      error: (err) => {
+        console.error('Error al refrescar telemetría:', err);
+        this.loading = false;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  public setStatusFilter(filter: DashboardStatusFilter): void {
+    this.statusFilter = filter;
+    this.cdr.detectChanges();
+  }
+
   public beginDeleteVehicle(vehicleId: string): void {
     this.pendingDeleteVehicleId = vehicleId;
     this.cdr.detectChanges();
@@ -200,6 +350,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       this.vehicles = this.vehicles.filter((vehicle) => vehicle.vehicleId !== vehicleId);
+      this.ensureSelection();
       this.updateMapMarkers(this.vehicles);
       this.cdr.detectChanges();
     });
@@ -216,6 +367,54 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     return 'info';
   }
 
+  public getCoverageRingGradient(): string {
+    const percentage = this.locationCoveragePercentage;
+    return `conic-gradient(#0ea5e9 ${percentage}%, rgba(148, 163, 184, 0.22) ${percentage}% 100%)`;
+  }
+
+  private applyTelemetryState(data: VehicleStatus[]): void {
+    this.vehicles = data;
+    this.loading = false;
+    this.lastSyncAt = new Date();
+    this.ensureSelection();
+    this.updateMapMarkers(data);
+    this.cdr.detectChanges();
+  }
+
+  private addActivity(title: string, detail: string): void {
+    this.activityFeed = [
+      {
+        id: ++this.activitySequence,
+        title,
+        detail,
+        timestamp: new Date(),
+      },
+      ...this.activityFeed,
+    ].slice(0, 6);
+  }
+
+  private ensureSelection(): void {
+    if (!this.vehicles.length) {
+      this.selectedVehicleId = null;
+      return;
+    }
+
+    const stillExists = this.vehicles.some((vehicle) => vehicle.vehicleId === this.selectedVehicleId);
+    if (!stillExists) {
+      this.selectedVehicleId = this.vehicles[0].vehicleId;
+    }
+  }
+
+  private getStatusGroup(status: string): 'active' | 'stopped' | 'maintenance' | 'unknown' {
+    const normalized = status?.toLowerCase().trim() ?? '';
+
+    if (normalized.includes('movimiento') || normalized === 'active') return 'active';
+    if (normalized.includes('detenido') || normalized === 'stopped') return 'stopped';
+    if (normalized.includes('mantenimiento') || normalized === 'maintenance') return 'maintenance';
+
+    return 'unknown';
+  }
+
   ngOnDestroy(): void {
     if (this.telemetrySubscription) {
       this.telemetrySubscription.unsubscribe();
@@ -223,6 +422,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (this.realtimeUpdatesSubscription) {
       this.realtimeUpdatesSubscription.unsubscribe();
+    }
+
+    if (this.liveClockSubscription) {
+      this.liveClockSubscription.unsubscribe();
     }
 
     this.realtimeTelemetryService.stopConnection();

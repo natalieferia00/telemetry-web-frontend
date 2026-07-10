@@ -1,122 +1,290 @@
-<div class="min-h-screen bg-slate-50 p-4 sm:p-6 font-sans">
-  
-  <header class="mb-6 max-w-7xl mx-auto">
-    <h1 class="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-      <i class="pi pi-map-marker text-sky-500 text-xl sm:text-2xl"></i>
-      Sistema de Monitoreo de Flotas
-    </h1>
-    <p class="text-sm sm:text-base text-slate-500 mt-1">
-      Telemetría satelital GPS activa y sincronizada con el simulador.
-    </p>
-  </header>
+<div class="dashboard-shell" [class.dark-theme]="isDarkMode">
+  <div class="dashboard-container">
+    <header class="dashboard-header">
+      <div>
+        <p class="dashboard-eyebrow">Telemetría / Control de flota</p>
+        <h1 class="dashboard-title">
+          <i class="pi pi-map-marker"></i>
+          Fleet Control Center
+        </h1>
+        <p class="dashboard-subtitle">
+          Monitoreo satelital en vivo con mapa, métricas y detalle de vehículos.
+        </p>
+      </div>
 
-  <main class="max-w-7xl mx-auto space-y-6">
-    <p-card styleClass="shadow-sm border border-slate-200/60 rounded-xl overflow-hidden">
-      <div class="p-1 sm:p-4 bg-white">
-        <div class="mb-4">
-          <h2 class="text-lg font-semibold text-slate-800">Mapa de Vehículos</h2>
-          <p class="text-sm text-slate-500">Última posición reportada de cada vehículo. Haz clic en un marcador para ver detalles.</p>
+      <div class="dashboard-actions">
+        <div class="live-indicator">
+          <span class="live-dot"></span>
+          <span>Última sincronización: {{ lastSyncAt | date:'mediumTime' }}</span>
+        </div>
+        <button type="button" class="ghost-button" (click)="toggleTheme()">
+          <i class="pi" [class.pi-sun]="isDarkMode" [class.pi-moon]="!isDarkMode"></i>
+          {{ isDarkMode ? 'Modo claro' : 'Modo oscuro' }}
+        </button>
+        <button type="button" class="primary-button" (click)="refreshTelemetry()">
+          <i class="pi pi-refresh"></i>
+          Actualizar
+        </button>
+      </div>
+    </header>
+
+    <section class="metrics-grid">
+      <article class="metric-card">
+        <span class="metric-label">Vehículos</span>
+        <strong class="metric-value">{{ totalVehicles }}</strong>
+        <span class="metric-meta">Total en la flota</span>
+      </article>
+
+      <article class="metric-card">
+        <span class="metric-label">Activos</span>
+        <strong class="metric-value">{{ activeVehicles }}</strong>
+        <span class="metric-meta">En movimiento</span>
+      </article>
+
+      <article class="metric-card">
+        <span class="metric-label">Detenidos</span>
+        <strong class="metric-value">{{ stoppedVehicles }}</strong>
+        <span class="metric-meta">Sin tránsito</span>
+      </article>
+
+      <article class="metric-card">
+        <span class="metric-label">Mantenimiento</span>
+        <strong class="metric-value">{{ maintenanceVehicles }}</strong>
+        <span class="metric-meta">Con atención</span>
+      </article>
+
+      <article class="metric-card">
+        <span class="metric-label">Coordenadas válidas</span>
+        <strong class="metric-value">{{ validCoordinatesVehicles }}</strong>
+        <span class="metric-meta">Con ubicación reportada</span>
+      </article>
+    </section>
+
+    <section class="alert-grid">
+      @for (alert of alertsSummary; track alert.title) {
+        <article class="alert-card" [class.warning]="alert.tone === 'warning'" [class.danger]="alert.tone === 'danger'">
+          <div class="alert-icon">
+            <i class="pi" [class.pi-info-circle]="alert.tone === 'neutral'" [class.pi-exclamation-triangle]="alert.tone !== 'neutral'"></i>
+          </div>
+          <div>
+            <strong>{{ alert.title }}</strong>
+            <p>{{ alert.description }}</p>
+          </div>
+        </article>
+      }
+    </section>
+
+    <section class="chart-grid">
+      <p-card styleClass="glass-card chart-card">
+        <div class="card-header-row compact">
+          <div>
+            <h2>Distribución por estado</h2>
+            <p>Balance de vehículos según su último estado reportado.</p>
+          </div>
+        </div>
+
+        <div class="chart-body">
+          @for (item of statusBreakdown; track item.label) {
+            <div class="bar-row">
+              <div class="bar-meta">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+              <div class="bar-track">
+                <div
+                  class="bar-fill"
+                  [style.width.%]="item.percentage"
+                  [style.background]="item.color">
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      </p-card>
+
+      <p-card styleClass="glass-card chart-card">
+        <div class="card-header-row compact">
+          <div>
+            <h2>Cobertura de ubicación</h2>
+            <p>Porcentaje de vehículos con coordenadas válidas.</p>
+          </div>
+        </div>
+
+        <div class="ring-body">
+          <div class="coverage-ring" [style.background]="getCoverageRingGradient()">
+            <div class="coverage-ring-inner">
+              <strong>{{ locationCoveragePercentage }}%</strong>
+              <span>válido</span>
+            </div>
+          </div>
+        </div>
+      </p-card>
+    </section>
+
+    <section class="content-grid">
+      <p-card styleClass="glass-card map-card">
+        <div class="card-header-row">
+          <div>
+            <h2>Mapa de ubicación</h2>
+            <p>Visualización geográfica de la última posición reportada.</p>
+          </div>
         </div>
         <div #mapContainer class="leaflet-map"></div>
-      </div>
-    </p-card>
+      </p-card>
 
-    <p-card styleClass="shadow-sm border border-slate-200/60 rounded-xl overflow-hidden">
-      <div class="p-1 sm:p-4 bg-white">
-        
-        <div class="w-full overflow-x-auto rounded-lg">
-          <p-table 
-            [value]="vehicles" 
-            [loading]="loading"
-            responsiveLayout="scroll" 
-            styleClass="p-datatable-striped min-w-[600px] w-full">
-            
-            <ng-template pTemplate="header">
-              <tr class="bg-slate-50 text-slate-700 border-b border-slate-200">
-                <th class="p-3 sm:p-4 font-semibold text-left text-xs sm:text-sm tracking-wider uppercase">Vehículo ID</th>
-                <th class="p-3 sm:p-4 font-semibold text-left text-xs sm:text-sm tracking-wider uppercase">Latitud</th>
-                <th class="p-3 sm:p-4 font-semibold text-left text-xs sm:text-sm tracking-wider uppercase">Longitud</th>
-                <th class="p-3 sm:p-4 font-semibold text-left text-xs sm:text-sm tracking-wider uppercase">Último Reporte</th>
-                <th class="p-3 sm:p-4 font-semibold text-center text-xs sm:text-sm tracking-wider uppercase">Estado</th>
-                <th class="p-3 sm:p-4 font-semibold text-center text-xs sm:text-sm tracking-wider uppercase">Acciones</th>
-              </tr>
-            </ng-template>
-
-            <ng-template pTemplate="body" let-vehicle>
-              <tr class="border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-sm">
-                <td class="p-3 sm:p-4 font-medium text-slate-900 whitespace-nowrap">
-                  <span class="flex items-center gap-2">
-                    <i class="pi pi-car text-slate-400"></i>
-                    {{ vehicle.vehicleId }}
-                  </span>
-                </td>
-                <td class="p-3 sm:p-4 text-slate-600 tabular-nums whitespace-nowrap">
-                  {{ vehicle.lastLat | number:'1.6-6' }}
-                </td>
-                <td class="p-3 sm:p-4 text-slate-600 tabular-nums whitespace-nowrap">
-                  {{ vehicle.lastLng | number:'1.6-6' }}
-                </td>
-                <td class="p-3 sm:p-4 text-slate-500 whitespace-nowrap">
-                  {{ vehicle.lastSeen | date:'mediumTime' }}
-                </td>
-                <td class="p-3 sm:p-4 text-center whitespace-nowrap">
-                  <p-tag 
-                    [value]="vehicle.status" 
-                    [severity]="getSeverity(vehicle.status)">
-                  </p-tag>
-                </td>
-                <td class="p-3 sm:p-4 text-center whitespace-nowrap">
-                  @if (pendingDeleteVehicleId === vehicle.vehicleId) {
-                    <form
-                      class="flex flex-col items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-2 shadow-sm"
-                      (submit)="$event.preventDefault(); confirmDeleteVehicle(vehicle.vehicleId)">
-                      <span class="text-[11px] font-semibold text-rose-700">¿Desea eliminar {{ vehicle.vehicleId }}?</span>
-                      <div class="flex items-center gap-2">
-                        <button
-                          type="submit"
-                          class="rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-rose-700">
-                          Sí
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-                          (click)="cancelDeleteVehicle()">
-                          Cancelar
-                        </button>
-                      </div>
-                    </form>
-                  } @else {
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
-                      (click)="beginDeleteVehicle(vehicle.vehicleId)"
-                      [attr.aria-label]="'Eliminar vehículo ' + vehicle.vehicleId">
-                      <i class="pi pi-trash"></i>
-                      Eliminar
-                    </button>
-                  }
-                </td>
-              </tr>
-            </ng-template>
-
-            <ng-template pTemplate="emptymessage">
-              <tr>
-                <td colspan="6" class="p-12 text-center text-slate-400">
-                  <div class="flex flex-col items-center justify-center gap-2">
-                    <i class="pi pi-spin pi-spinner text-sky-500 text-3xl mb-1"></i>
-                    <p class="font-medium text-slate-600 text-base">Esperando señal de telemetría...</p>
-                    <p class="text-xs text-slate-400 max-w-xs">
-                    </p>
-                  </div>
-                </td>
-              </tr>
-            </ng-template>
-            
-          </p-table>
+      <p-card styleClass="glass-card detail-card">
+        <div class="card-header-row">
+          <div>
+            <h2>Detalle del vehículo</h2>
+            <p>Información resumida del registro actualmente seleccionado.</p>
+          </div>
         </div>
 
-      </div>
-    </p-card>
-  </main>
+        @if (selectedVehicle) {
+          <div class="detail-body">
+            <div class="detail-top">
+              <div>
+                <span class="detail-label">Vehículo</span>
+                <strong class="detail-id">{{ selectedVehicle.vehicleId }}</strong>
+              </div>
+              <p-tag [value]="selectedVehicle.status" [severity]="getSeverity(selectedVehicle.status)"></p-tag>
+            </div>
 
+            <div class="detail-grid">
+              <div class="detail-item">
+                <span>Latitud</span>
+                <strong>{{ selectedVehicle.lastLat | number:'1.6-6' }}</strong>
+              </div>
+              <div class="detail-item">
+                <span>Longitud</span>
+                <strong>{{ selectedVehicle.lastLng | number:'1.6-6' }}</strong>
+              </div>
+              <div class="detail-item detail-wide">
+                <span>Último reporte</span>
+                <strong>{{ selectedVehicle.lastSeen | date:'medium' }}</strong>
+              </div>
+            </div>
+          </div>
+        } @else {
+          <div class="empty-detail">
+            <i class="pi pi-info-circle"></i>
+            <span>No hay un vehículo seleccionado.</span>
+          </div>
+        }
+      </p-card>
+    </section>
+
+    <section class="bottom-grid">
+      <p-card styleClass="glass-card table-card">
+        <div class="card-header-row compact">
+          <div>
+            <h2>Vehículos en tiempo real</h2>
+            <p>Selecciona un registro para visualizar su detalle y mantiene el panel sincronizado.</p>
+          </div>
+          <div class="filter-group">
+            <button type="button" class="filter-chip" [class.active]="statusFilter === 'all'" (click)="setStatusFilter('all')">Todos</button>
+            <button type="button" class="filter-chip" [class.active]="statusFilter === 'active'" (click)="setStatusFilter('active')">Activos</button>
+            <button type="button" class="filter-chip" [class.active]="statusFilter === 'stopped'" (click)="setStatusFilter('stopped')">Detenidos</button>
+            <button type="button" class="filter-chip" [class.active]="statusFilter === 'maintenance'" (click)="setStatusFilter('maintenance')">Mantenimiento</button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <p-table
+            [value]="filteredVehicles"
+            [loading]="loading"
+            responsiveLayout="scroll"
+            styleClass="fleet-table">
+
+          <ng-template pTemplate="header">
+            <tr>
+              <th>Vehículo ID</th>
+              <th>Latitud</th>
+              <th>Longitud</th>
+              <th>Último Reporte</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </ng-template>
+
+          <ng-template pTemplate="body" let-vehicle>
+            <tr
+              class="fleet-row"
+              [class.is-selected]="selectedVehicleId === vehicle.vehicleId"
+              (click)="selectVehicle(vehicle.vehicleId)">
+              <td>
+                <span class="vehicle-cell">
+                  <i class="pi pi-car"></i>
+                  {{ vehicle.vehicleId }}
+                </span>
+              </td>
+              <td>{{ vehicle.lastLat | number:'1.6-6' }}</td>
+              <td>{{ vehicle.lastLng | number:'1.6-6' }}</td>
+              <td>{{ vehicle.lastSeen | date:'mediumTime' }}</td>
+              <td>
+                <p-tag [value]="vehicle.status" [severity]="getSeverity(vehicle.status)"></p-tag>
+              </td>
+              <td>
+                @if (pendingDeleteVehicleId === vehicle.vehicleId) {
+                  <form
+                    class="delete-inline-form"
+                    (submit)="$event.preventDefault(); confirmDeleteVehicle(vehicle.vehicleId)">
+                    <span>¿Eliminar {{ vehicle.vehicleId }}?</span>
+                    <div class="delete-actions">
+                      <button type="submit" class="confirm-delete-button">Sí</button>
+                      <button type="button" class="cancel-delete-button" (click)="cancelDeleteVehicle()">Cancelar</button>
+                    </div>
+                  </form>
+                } @else {
+                  <button
+                    type="button"
+                    class="delete-button"
+                    (click)="$event.stopPropagation(); beginDeleteVehicle(vehicle.vehicleId)">
+                    <i class="pi pi-trash"></i>
+                    Eliminar
+                  </button>
+                }
+              </td>
+            </tr>
+          </ng-template>
+
+          <ng-template pTemplate="emptymessage">
+            <tr>
+              <td colspan="6" class="empty-table-cell">
+                <div class="empty-table-state">
+                  <i class="pi pi-spin pi-spinner"></i>
+                  <p>Esperando señal de telemetría...</p>
+                </div>
+              </td>
+            </tr>
+          </ng-template>
+          </p-table>
+        </div>
+      </p-card>
+
+      <p-card styleClass="glass-card activity-card">
+        <div class="card-header-row compact">
+          <div>
+            <h2>Actividad reciente</h2>
+            <p>Últimos eventos y cambios del sistema en tiempo real.</p>
+          </div>
+        </div>
+
+        <div class="activity-list">
+          @for (activity of activityFeed; track activity.id) {
+            <div class="activity-item">
+              <div class="activity-badge">
+                <i class="pi pi-bolt"></i>
+              </div>
+              <div>
+                <strong>{{ activity.title }}</strong>
+                <p>{{ activity.detail }}</p>
+                <span>{{ activity.timestamp | date:'mediumTime' }}</span>
+              </div>
+            </div>
+          }
+        </div>
+      </p-card>
+    </section>
+  </div>
 </div>
