@@ -1,0 +1,15 @@
+{
+  "/api": {
+    "target": "http://localhost:5136",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug"
+  },
+  "/chathub": {
+    "target": "http://localhost:5136",
+    "secure": false,
+    "changeOrigin": true,
+    "ws": true,
+    "logLevel": "debug"
+  }
+}

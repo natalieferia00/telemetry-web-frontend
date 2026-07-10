@@ -1,3 +1,42 @@
-/* You can add global styles to this file, and also import other style files */
+/* src/styles.css */
+@import "tailwindcss";
 
-@import 'tailwindcss';
+/* Iconos de PrimeIcons (estos se mantienen igual) */
+@import "primeicons/primeicons.css";
+@import "leaflet/dist/leaflet.css";
+
+.leaflet-map {
+  min-height: 420px;
+  height: 420px;
+  width: 100%;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.leaflet-container {
+  border-radius: 1rem;
+}
+
+.vehicle-marker-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  border: 2px solid #ffffff;
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 0 4px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.vehicle-marker-icon span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
